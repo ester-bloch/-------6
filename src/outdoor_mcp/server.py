@@ -96,7 +96,8 @@ class OutdoorIntelligenceServer:
 
                 (locations, prov), cache_meta = await self._cache.get_or_set(key, factory, ttl_s=min(settings.cache_ttl_s, 900))
                 data = {"locations": [l.model_dump() for l in locations]}
-                prov.fetched_at_iso = _now_iso()
+                if not cache_meta["hit"]:
+                    prov.fetched_at_iso = _now_iso()
                 return self._ok(data, provenance=prov, cache_meta=cache_meta, request_id=request_id)
             except AppError as e:
                 return self._err(e, provenance=Provenance(sources=["osm_overpass"]), request_id=request_id)
@@ -127,7 +128,8 @@ class OutdoorIntelligenceServer:
                     return await self._locations.profile(location, features_radius_km=args.features_radius_km)
 
                 (profile, prov), cache_meta = await self._cache.get_or_set(key, factory, ttl_s=min(settings.cache_ttl_s, 900))
-                prov.fetched_at_iso = _now_iso()
+                if not cache_meta["hit"]:
+                    prov.fetched_at_iso = _now_iso()
                 data = {"profile": profile.model_dump()}
                 warnings = []
                 if args.location_id and location.name == "Location Anchor":
@@ -148,7 +150,11 @@ class OutdoorIntelligenceServer:
                 async def factory():
                     return await self._conditions.real_time(coords.lat, coords.lon)
 
-                (conditions, prov, warnings), cache_meta = await self._cache.get_or_set(key, factory, ttl_s=min(settings.cache_ttl_s, 300))
+                (conditions, prov, warnings, _alerts_ok, _alerts_demo), cache_meta = await self._cache.get_or_set(
+                    key,
+                    factory,
+                    ttl_s=min(settings.cache_ttl_s, 300),
+                )
                 data = {"conditions": conditions.model_dump()}
                 return self._ok(data, provenance=prov, cache_meta=cache_meta, warnings=warnings, request_id=request_id)
             except AppError as e:
@@ -177,9 +183,19 @@ class OutdoorIntelligenceServer:
                 async def cond_factory():
                     return await self._conditions.real_time(coords.lat, coords.lon)
 
-                (conditions, prov2, warnings), cache_meta = await self._cache.get_or_set(cond_key, cond_factory, ttl_s=min(settings.cache_ttl_s, 300))
+                (conditions, prov2, warnings, alerts_ok, alerts_demo), cache_meta = await self._cache.get_or_set(
+                    cond_key,
+                    cond_factory,
+                    ttl_s=min(settings.cache_ttl_s, 300),
+                )
 
-                assessment = self._risk.assess(conditions=conditions, feature_count=feature_count, when_iso=args.when_iso)
+                assessment = self._risk.assess(
+                    conditions=conditions,
+                    feature_count=feature_count,
+                    when_iso=args.when_iso,
+                    alerts_ok=alerts_ok,
+                    alerts_demo=alerts_demo,
+                )
 
                 prov = Provenance(
                     sources=list({*(prov1.sources or []), *(prov2.sources or [])}),

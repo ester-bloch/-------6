@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+import re
 from typing import Any
 
 from ..core.exceptions import ProviderError
@@ -26,7 +27,7 @@ class OverpassProvider:
         # Simple, robust query: search for named nodes/ways/relations matching query within radius.
         name_filter = ""
         if query:
-            safe = query.replace('"', "")
+            safe = re.escape(query)
             name_filter = f'[name~"{safe}",i]'
         q = f"""
         [out:json][timeout:25];

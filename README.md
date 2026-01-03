@@ -4,9 +4,8 @@ A production-grade **Model Context Protocol (MCP)** server that provides **decis
 
 This repository is designed for **human reviewers and AI evaluators**:
 - Runs as a **real stdio MCP server** (Claude Desktop compatible).
-- Clean layered architecture (**Tools → Services → Providers**).
+- Clean layered architecture (**Tools + Services + Providers**).
 - Async I/O, TTL caching, rate limiting, structured logs, and a stable JSON contract.
-- No “README promises” that are not implemented.
 
 ---
 
@@ -18,7 +17,7 @@ This repository is designed for **human reviewers and AI evaluators**:
 | `search_locations` | Find POIs / trails / parks near coordinates | OSM via Overpass |
 | `get_location_profile` | Nearby features and profile for a location | OSM feature scan |
 | `get_real_time_conditions` | Weather + alerts | OpenWeather + extensible alerts provider |
-| `risk_and_safety_summary` | **Risk score (0–100)** with breakdown, evidence, recommendations | Deterministic, explainable |
+| `risk_and_safety_summary` | **Risk score (0-100)** with breakdown, evidence, recommendations | Deterministic, explainable |
 
 All tools return **structured JSON**: `ok`, `data`, `provenance`, `cache`, `warnings`.
 
@@ -38,7 +37,7 @@ src/outdoor_mcp/
   utils/                   # id parsing and helpers
 ```
 
-**Rule of engagement:** Tools never call HTTP. Providers never return “tool-shaped” responses.
+
 
 ---
 
@@ -53,7 +52,7 @@ pip install -e .
 ```
 
 ### 2) Configure (optional but recommended)
-Copy `.env.example` → `.env` and set:
+Copy `.env.example` + `.env` and set:
 - `OPENWEATHER_API_KEY` for real weather (otherwise demo fallback is used).
 
 ### 3) Run (stdio)
@@ -108,7 +107,7 @@ Output (shape):
 
 ### risk_and_safety_summary
 Output includes:
-- `risk_score` (0–100)
+- `risk_score` (0-100)
 - `breakdown` (weather/alerts/remoteness/daylight)
 - `evidence` (raw conditions + feature_count + timestamps)
 - `recommendations`
@@ -132,7 +131,7 @@ Tests are **offline-friendly**:
 
 ## Design tradeoffs (explicit)
 
-- **NPS geo-alerts are not supported directly** by the public API, so the NPS provider is intentionally conservative (returns empty unless you extend it with parkCode-based lookups).
+- **NPS geo-alerts are not supported directly** by the public API, so alerts use a best-effort nearest-park lookup.
 - Daylight risk is a deterministic heuristic (no sunrise provider integrated by default to keep the base system stable and easy to review).
 - This server prioritizes **depth and correctness** over a large number of shallow tools.
 

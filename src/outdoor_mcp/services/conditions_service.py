@@ -22,16 +22,18 @@ class ConditionsService:
 
         alerts = []
         alerts_ok = False
+        alerts_demo = False
         try:
             alerts = await self._nps.get_alerts_near(lat=lat, lon=lon)
             alerts_ok = True
         except ProviderError as e:
             warnings.append("alerts_unavailable")
         if not settings.nps_api_key and settings.demo_fallback:
+            alerts_demo = True
             warnings.append("alerts_demo_mode")
 
         prov = Provenance(
             sources=[self._weather.name] + ([self._nps.name] if alerts_ok else []),
             fetched_at_iso=_dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
         )
-        return RealTimeConditions(weather=weather, alerts=alerts or []), prov, warnings
+        return RealTimeConditions(weather=weather, alerts=alerts or []), prov, warnings, alerts_ok, alerts_demo

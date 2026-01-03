@@ -35,6 +35,7 @@ class NPSAlertsProvider:
                 "start": page * settings.nps_parks_page_size,
             }
             url = f"{settings.nps_api_base_url}/parks"
+            await self._ctx.limiter.acquire()
             resp = await self._ctx.http.request("GET", url, params=params, timeout=settings.nps_timeout_s)
             if resp.status_code != 200:
                 raise ProviderError(
@@ -72,6 +73,7 @@ class NPSAlertsProvider:
         park_code = await self._nearest_park_code(lat, lon)
         params = {"api_key": settings.nps_api_key, "parkCode": park_code, "limit": settings.nps_alerts_limit}
         url = f"{settings.nps_api_base_url}/alerts"
+        await self._ctx.limiter.acquire()
         resp = await self._ctx.http.request("GET", url, params=params, timeout=settings.nps_timeout_s)
         if resp.status_code != 200:
             raise ProviderError(
