@@ -15,6 +15,7 @@ class WeatherConditions(BaseModel):
     precipitation_mm_1h: Optional[float] = None
     humidity_pct: Optional[int] = Field(default=None, ge=0, le=100)
     description: Optional[str] = None
+    is_demo: bool = False
 
 
 class Alert(BaseModel):

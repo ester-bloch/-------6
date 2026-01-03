@@ -87,7 +87,7 @@ class RiskService:
         if alerts >= 35:
             recs.append("Review active alerts and follow local authority guidance.")
 
-        if conditions.weather.description and "Demo weather" in conditions.weather.description:
+        if conditions.weather.is_demo:
             uncertainties.append("Weather is in demo mode (no OPENWEATHER_API_KEY). Risk score may be underestimated/overestimated.")
         if not conditions.alerts:
             uncertainties.append("Alert coverage may be partial (NPS geo alerts not supported directly).")

@@ -12,6 +12,7 @@ class Coordinates(BaseModel):
 class Provenance(BaseModel):
     sources: list[str] = Field(default_factory=list)
     fetched_at_iso: Optional[str] = None
+    request_id: Optional[str] = None
     notes: list[str] = Field(default_factory=list)
 
 
