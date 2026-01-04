@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as _dt
 from typing import Any, Optional
+import uuid
 
 from mcp.server.fastmcp import FastMCP
 
@@ -58,14 +59,21 @@ class OutdoorIntelligenceServer:
     async def close(self) -> None:
         await self._ctx.http.close()
 
-    def _ok(self, data: dict, *, provenance: Provenance, cache_meta: dict | None = None, warnings: list[str] | None = None):
+    def _ok(self, data: dict, *, provenance: Provenance, cache_meta: dict | None = None, warnings: list[str] | None = None, request_id: str | None = None):
+        if request_id:
+            provenance.request_id = request_id
         resp = ToolResponse(ok=True, data=data, provenance=provenance, cache=cache_meta, warnings=warnings or [])
         return resp.model_dump()
 
-    def _err(self, err: AppError, *, provenance: Provenance | None = None, warnings: list[str] | None = None):
+    def _err(self, err: AppError, *, provenance: Provenance | None = None, warnings: list[str] | None = None, request_id: str | None = None):
         prov = provenance or Provenance(sources=[])
+        if request_id:
+            prov.request_id = request_id
         resp = ToolErrorResponse(ok=False, error=err.to_dict(), provenance=prov, warnings=warnings or [])
         return resp.model_dump()
+
+    def _new_request_id(self) -> str:
+        return uuid.uuid4().hex
 
     def _coords_from_input(self, location_id: str | None, lat: float | None, lon: float | None) -> Coordinates:
         if location_id:
@@ -78,23 +86,28 @@ class OutdoorIntelligenceServer:
         @self.mcp.tool()
         async def search_locations(args: SearchLocationsInput) -> dict[str, Any]:
             """Search locations (POIs, trails, parks) near coordinates using OpenStreetMap Overpass."""
-            key = f"search:{args.lat:.5f}:{args.lon:.5f}:{args.radius_km:.2f}:{args.query.lower()}:{args.limit}"
+            request_id = self._new_request_id()
+            query = (args.query or "").strip()
+            query_norm = query.lower() if query else "*"
+            key = f"search:{args.lat:.5f}:{args.lon:.5f}:{args.radius_km:.2f}:{query_norm}:{args.limit}"
             try:
                 async def factory():
-                    return await self._locations.search(args.lat, args.lon, args.radius_km, args.query, limit=args.limit)
+                    return await self._locations.search(args.lat, args.lon, args.radius_km, query or None, limit=args.limit)
 
                 (locations, prov), cache_meta = await self._cache.get_or_set(key, factory, ttl_s=min(settings.cache_ttl_s, 900))
                 data = {"locations": [l.model_dump() for l in locations]}
-                prov.fetched_at_iso = _now_iso()
-                return self._ok(data, provenance=prov, cache_meta=cache_meta)
+                if not cache_meta["hit"]:
+                    prov.fetched_at_iso = _now_iso()
+                return self._ok(data, provenance=prov, cache_meta=cache_meta, request_id=request_id)
             except AppError as e:
-                return self._err(e, provenance=Provenance(sources=["osm_overpass"]))
+                return self._err(e, provenance=Provenance(sources=["osm_overpass"]), request_id=request_id)
             except Exception as e:
-                return self._err(AppError(code="internal_error", message="Unhandled error.", details={"where": "search_locations"}, cause=e), provenance=Provenance(sources=["osm_overpass"]))
+                return self._err(AppError(code="internal_error", message="Unhandled error.", details={"where": "search_locations"}, cause=e), provenance=Provenance(sources=["osm_overpass"]), request_id=request_id)
 
         @self.mcp.tool()
         async def get_location_profile(args: GetLocationProfileInput) -> dict[str, Any]:
             """Get a normalized profile for a location, including nearby features."""
+            request_id = self._new_request_id()
             try:
                 coords = self._coords_from_input(args.location_id, args.lat, args.lon)
 
@@ -115,37 +128,44 @@ class OutdoorIntelligenceServer:
                     return await self._locations.profile(location, features_radius_km=args.features_radius_km)
 
                 (profile, prov), cache_meta = await self._cache.get_or_set(key, factory, ttl_s=min(settings.cache_ttl_s, 900))
-                prov.fetched_at_iso = _now_iso()
+                if not cache_meta["hit"]:
+                    prov.fetched_at_iso = _now_iso()
                 data = {"profile": profile.model_dump()}
                 warnings = []
                 if args.location_id and location.name == "Location Anchor":
                     warnings.append("location_id resolution uses embedded coordinates; name is a synthetic anchor.")
-                return self._ok(data, provenance=prov, cache_meta=cache_meta, warnings=warnings)
+                return self._ok(data, provenance=prov, cache_meta=cache_meta, warnings=warnings, request_id=request_id)
             except AppError as e:
-                return self._err(e, provenance=Provenance(sources=["osm_overpass"]))
+                return self._err(e, provenance=Provenance(sources=["osm_overpass"]), request_id=request_id)
             except Exception as e:
-                return self._err(AppError(code="internal_error", message="Unhandled error.", details={"where": "get_location_profile"}, cause=e), provenance=Provenance(sources=["osm_overpass"]))
+                return self._err(AppError(code="internal_error", message="Unhandled error.", details={"where": "get_location_profile"}, cause=e), provenance=Provenance(sources=["osm_overpass"]), request_id=request_id)
 
         @self.mcp.tool()
         async def get_real_time_conditions(args: GetRealTimeConditionsInput) -> dict[str, Any]:
             """Get real-time weather and alerts for a location."""
+            request_id = self._new_request_id()
             try:
                 coords = self._coords_from_input(args.location_id, args.lat, args.lon)
                 key = f"conditions:{coords.lat:.5f}:{coords.lon:.5f}"
                 async def factory():
                     return await self._conditions.real_time(coords.lat, coords.lon)
 
-                (conditions, prov), cache_meta = await self._cache.get_or_set(key, factory, ttl_s=min(settings.cache_ttl_s, 300))
+                (conditions, prov, warnings, _alerts_ok, _alerts_demo), cache_meta = await self._cache.get_or_set(
+                    key,
+                    factory,
+                    ttl_s=min(settings.cache_ttl_s, 300),
+                )
                 data = {"conditions": conditions.model_dump()}
-                return self._ok(data, provenance=prov, cache_meta=cache_meta)
+                return self._ok(data, provenance=prov, cache_meta=cache_meta, warnings=warnings, request_id=request_id)
             except AppError as e:
-                return self._err(e, provenance=Provenance(sources=["openweather", "nps_alerts"]))
+                return self._err(e, provenance=Provenance(sources=["openweather", "nps_alerts"]), request_id=request_id)
             except Exception as e:
-                return self._err(AppError(code="internal_error", message="Unhandled error.", details={"where": "get_real_time_conditions"}, cause=e), provenance=Provenance(sources=["openweather", "nps_alerts"]))
+                return self._err(AppError(code="internal_error", message="Unhandled error.", details={"where": "get_real_time_conditions"}, cause=e), provenance=Provenance(sources=["openweather", "nps_alerts"]), request_id=request_id)
 
         @self.mcp.tool()
         async def risk_and_safety_summary(args: RiskAndSafetySummaryInput) -> dict[str, Any]:
             """Compute a deterministic risk score (0-100) with evidence and recommendations."""
+            request_id = self._new_request_id()
             try:
                 coords = self._coords_from_input(args.location_id, args.lat, args.lon)
 
@@ -163,9 +183,19 @@ class OutdoorIntelligenceServer:
                 async def cond_factory():
                     return await self._conditions.real_time(coords.lat, coords.lon)
 
-                (conditions, prov2), cache_meta = await self._cache.get_or_set(cond_key, cond_factory, ttl_s=min(settings.cache_ttl_s, 300))
+                (conditions, prov2, warnings, alerts_ok, alerts_demo), cache_meta = await self._cache.get_or_set(
+                    cond_key,
+                    cond_factory,
+                    ttl_s=min(settings.cache_ttl_s, 300),
+                )
 
-                assessment = self._risk.assess(conditions=conditions, feature_count=feature_count, when_iso=args.when_iso)
+                assessment = self._risk.assess(
+                    conditions=conditions,
+                    feature_count=feature_count,
+                    when_iso=args.when_iso,
+                    alerts_ok=alerts_ok,
+                    alerts_demo=alerts_demo,
+                )
 
                 prov = Provenance(
                     sources=list({*(prov1.sources or []), *(prov2.sources or [])}),
@@ -173,11 +203,11 @@ class OutdoorIntelligenceServer:
                     notes=[],
                 )
                 data = {"risk": assessment.model_dump()}
-                return self._ok(data, provenance=prov, cache_meta=cache_meta)
+                return self._ok(data, provenance=prov, cache_meta=cache_meta, warnings=warnings, request_id=request_id)
             except AppError as e:
-                return self._err(e, provenance=Provenance(sources=["osm_overpass", "openweather", "nps_alerts"]))
+                return self._err(e, provenance=Provenance(sources=["osm_overpass", "openweather", "nps_alerts"]), request_id=request_id)
             except Exception as e:
-                return self._err(AppError(code="internal_error", message="Unhandled error.", details={"where": "risk_and_safety_summary"}, cause=e), provenance=Provenance(sources=["osm_overpass", "openweather", "nps_alerts"]))
+                return self._err(AppError(code="internal_error", message="Unhandled error.", details={"where": "risk_and_safety_summary"}, cause=e), provenance=Provenance(sources=["osm_overpass", "openweather", "nps_alerts"]), request_id=request_id)
 
     async def run(self) -> None:
         logger.info("starting", server=settings.server_name)

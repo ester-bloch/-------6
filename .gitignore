@@ -1,0 +1,74 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.kiro/
+.hypothesis
+# Testing
+.coverage
+.pytest_cache/
+.tox/
+htmlcov/
+docks
+scripts
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pre-commit
+.pre-commit-cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment variables (Crucial for API keys)
+.env
+.env.local
+.env.shared
+
+# Logging
+*.log
+logs/
+
+# MCP Specific
+.mcp/
+mcp_usage.json
+
+# Local development
+config.local.yaml

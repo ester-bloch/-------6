@@ -5,6 +5,7 @@ import asyncio
 from dataclasses import dataclass
 
 from .exceptions import RateLimitError
+from .settings import settings
 
 
 @dataclass
@@ -35,11 +36,11 @@ class RateLimiter:
         self._lock = asyncio.Lock()
 
     async def acquire(self) -> None:
-        async with self._lock:
-            if self._bucket.consume(1.0):
-                return
-        # simple backoff wait
-        await asyncio.sleep(max(0.05, 1.0 / max(self._bucket.rate_per_s, 0.1)))
-        async with self._lock:
-            if not self._bucket.consume(1.0):
+        start = time.time()
+        while True:
+            async with self._lock:
+                if self._bucket.consume(1.0):
+                    return
+            if time.time() - start > settings.rate_limit_max_wait_s:
                 raise RateLimitError(code="rate_limited", message="Rate limit exceeded. Please retry.")
+            await asyncio.sleep(max(0.05, 1.0 / max(self._bucket.rate_per_s, 0.1)))

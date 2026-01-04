@@ -10,7 +10,7 @@ class LocationService:
     def __init__(self, overpass: OverpassProvider):
         self._overpass = overpass
 
-    async def search(self, lat: float, lon: float, radius_km: float, query: str, limit: int = 10):
+    async def search(self, lat: float, lon: float, radius_km: float, query: Optional[str], limit: int = 10):
         locations = await self._overpass.search_locations(lat=lat, lon=lon, radius_km=radius_km, query=query, limit=limit)
         prov = Provenance(sources=[self._overpass.name])
         return locations, prov

@@ -1,156 +1,223 @@
-# Outdoor Intelligence MCP Server (stdio)
+# Outdoor Intelligence MCP Server
 
-A production-grade **Model Context Protocol (MCP)** server that provides **decision-support** for outdoor activities: location discovery, deep profiles, real-time conditions, and a deterministic risk score with evidence.
+A Python implementation of a **Model Context Protocol (MCP)** server that performs controlled external HTTP requests and exposes structured outdoor and environmental data to language models through typed tools.
 
-This repository is designed for **human reviewers and AI evaluators**:
-- Runs as a **real stdio MCP server** (Claude Desktop compatible).
-- Clean layered architecture (**Tools → Services → Providers**).
-- Async I/O, TTL caching, rate limiting, structured logs, and a stable JSON contract.
-- No “README promises” that are not implemented.
+The server executes network calls to authoritative data sources, aggregates external data, and returns schema-validated outputs suitable for deterministic reasoning and technical evaluation.
 
 ---
 
-## What you get
+## Purpose
 
-### Smart tools (LLM-native)
-| Tool | Purpose | Notes |
-|---|---|---|
-| `search_locations` | Find POIs / trails / parks near coordinates | OSM via Overpass |
-| `get_location_profile` | Nearby features and profile for a location | OSM feature scan |
-| `get_real_time_conditions` | Weather + alerts | OpenWeather + extensible alerts provider |
-| `risk_and_safety_summary` | **Risk score (0–100)** with breakdown, evidence, recommendations | Deterministic, explainable |
+This MCP server provides a dedicated runtime for executing external HTTP calls, retrieving live outdoor and environmental data, and exposing that data through a bounded, predictable tool interface.
 
-All tools return **structured JSON**: `ok`, `data`, `provenance`, `cache`, `warnings`.
+It centralizes network access, validation, and orchestration concerns that should not be handled directly by a language model.
 
 ---
 
-## Architecture
+## Available MCP Tools
+
+- **search_locations**  
+  Search for outdoor locations using geographic coordinates and distance constraints.
+
+- **risk_and_safety_summary**  
+  Return an interpreted safety-oriented summary derived from available data sources.
+
+- **get_real_time_conditions**  
+  Fetch live environmental and weather-related conditions.
+
+- **get_location_profile**  
+  Retrieve structured metadata for a specific location.
+
+All tools return typed responses with explicit schemas.
+
+---
+
+## Data Sources
+
+### [National Park Service API (USA)](https://www.nps.gov/subjects/developer/api-documentation.htm)
+
+The official national data source of the United States National Park Service, providing authoritative information about U.S. national parks and protected areas.
+
+Requires `NPS_API_KEY`.
+
+### [OpenStreetMap / Overpass API](https://www.openstreetmap.org)
+
+Global, community-maintained geographic data used for spatial and location-based queries.
+
+### [OpenWeather API](https://openweathermap.org/api)
+
+Live environmental and weather-related data relevant to outdoor activity.
+
+Requires `OPENWEATHER_API_KEY`.
+
+---
+
+## Project Structure
 
 ```
-src/outdoor_mcp/
-  __main__.py              # python -m outdoor_mcp
-  server.py                # FastMCP registration + orchestration (thin)
-  tools/                   # Pydantic tool schemas (inputs)
-  services/                # business logic (fusion, scoring)
-  providers/               # external providers (Overpass/OpenWeather/NPS stub)
-  models/                  # response schemas (Pydantic v2)
-  core/                    # cache, http client, rate limiting, logging, settings
-  utils/                   # id parsing and helpers
+src/
+├── outdoor_mcp/
+│   ├── __init__.py
+│   ├── __main__.py          # Application entry point
+│   ├── server.py            # FastMCP server setup
+│   ├── config.py            # Configuration handling
+│   ├── models/              # Typed schemas (Pydantic)
+│   ├── tools/               # MCP-facing tool contracts
+│   ├── services/            # Business logic orchestration
+│   ├── providers/           # External API adapters
+│   ├── core/                # HTTP, caching, rate limiting
+│   └── utils/               # Shared utilities
+tests/
+├── unit/
+├── integration/
+├── property/
+└── conftest.py
 ```
-
-**Rule of engagement:** Tools never call HTTP. Providers never return “tool-shaped” responses.
 
 ---
 
-## Quickstart
+## Installation
 
-### 1) Install
+### Prerequisites
+- Python 3.10+
+- pip or Poetry
+
+### Using pip
+
 ```bash
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+git clone <repository-url>
+cd outdoor-intelligence-mcp
+python -m venv venv
+source venv/bin/activate
 pip install -e .
 ```
 
-### 2) Configure (optional but recommended)
-Copy `.env.example` → `.env` and set:
-- `OPENWEATHER_API_KEY` for real weather (otherwise demo fallback is used).
-
-### 3) Run (stdio)
-```bash
-python -m outdoor_mcp
-# or
-outdoor-intelligence-mcp
-```
-
-**Logging:** goes to `stderr`. MCP protocol stays on `stdout`.
-
----
-
-## Claude Desktop configuration
-
-Create / edit your Claude Desktop config and add:
-
-```json
-{
-  "mcpServers": {
-    "outdoor-intelligence": {
-      "command": "python",
-      "args": ["-m", "outdoor_mcp"],
-      "env": {
-        "OPENWEATHER_API_KEY": "YOUR_KEY_OPTIONAL"
-      }
-    }
-  }
-}
-```
-
----
-
-## Example tool calls (conceptual)
-
-### search_locations
-Input:
-```json
-{"lat": 31.7767, "lon": 35.2345, "radius_km": 5, "query": "park", "limit": 5}
-```
-
-Output (shape):
-```json
-{
-  "ok": true,
-  "data": {"locations": [{"id":"osm:node:123:31.77:35.23","name":"...","kind":"park","center":{"lat":31.77,"lon":35.23}}]},
-  "provenance": {"sources":["osm_overpass"], "fetched_at_iso":"..."},
-  "cache": {"hit": false, "age_s": 0, "ttl_s": 600},
-  "warnings": []
-}
-```
-
-### risk_and_safety_summary
-Output includes:
-- `risk_score` (0–100)
-- `breakdown` (weather/alerts/remoteness/daylight)
-- `evidence` (raw conditions + feature_count + timestamps)
-- `recommendations`
-- `uncertainties` (explicit, reviewer-friendly)
-
----
-
-## Testing
+### Using Poetry
 
 ```bash
-pip install -r requirements-dev.txt
-pytest -q
+git clone <repository-url>
+cd outdoor-intelligence-mcp
+poetry install
+poetry shell
 ```
 
-Tests are **offline-friendly**:
-- Risk scoring logic is unit-tested.
-- Cache behavior is unit-tested.
-- Integration import smoke test ensures packaging + server instantiation.
+---
+
+## Configuration
+
+### API Keys
+
+1. Generate API keys from:
+   - **[National Park Service](https://www.nps.gov/subjects/developer/get-started.htm)**
+   - **[OpenWeather](https://home.openweathermap.org/api_keys)**
+
+2. Copy the example environment file:
+
+```bash
+cp .env.example .env
+```
+
+3. Edit `.env` and add your API keys:
+
+```env
+NPS_API_KEY=your_nps_api_key_here
+OPENWEATHER_API_KEY=your_openweather_api_key_here
+```
+
+If API keys are not provided, the server runs in a fallback demo mode using internal logic while preserving tool availability and response structure.
 
 ---
 
-## Design tradeoffs (explicit)
+## Development and Testing
 
-- **NPS geo-alerts are not supported directly** by the public API, so the NPS provider is intentionally conservative (returns empty unless you extend it with parkCode-based lookups).
-- Daylight risk is a deterministic heuristic (no sunrise provider integrated by default to keep the base system stable and easy to review).
-- This server prioritizes **depth and correctness** over a large number of shallow tools.
+### Running Tests
+
+```bash
+poetry run pytest
+poetry run pytest --cov=src --cov-report=html
+poetry run pytest tests/unit/
+poetry run pytest tests/integration/
+poetry run pytest tests/property/
+```
+
+### Code Quality
+
+```bash
+poetry run black src tests
+poetry run isort src tests
+poetry run flake8 src tests
+poetry run mypy src
+```
+
+### Pre-commit Hooks
+
+```bash
+pre-commit run --all-files
+pre-commit run black
+pre-commit run mypy
+```
 
 ---
 
-## Extending the server
+## Engineering Quality
 
-Add a new provider:
-1. Create `providers/<name>.py`
-2. Expose it via `services/`
-3. Wire it into `server.py`
-
-Add a new tool:
-1. Define input schema in `tools/schemas.py`
-2. Register tool in `server.py`
-3. Return structured JSON (`ToolResponse`)
+- Synchronous HTTP I/O using **HTTPX**
+- TTL caching and in-flight request de-duplication
+- Rate limiting and retry with exponential backoff
+- Clean layered architecture  
+  `Transport (MCP stdio) → Tools → Services → Providers → External APIs`
+- Fully typed domain models (**Pydantic + mypy**)
+- Unit and integration testing with **pytest**
 
 ---
 
-## License
-MIT (or adapt as required for the hiring process)
+## Technology Stack
+
+- **FastMCP** – Official Python MCP SDK
+- **Python 3.10+**
+- **HTTPX**
+- **Pydantic**
+- **mypy**
+- **pytest**
+- **pre-commit**
+- **Layered Architecture**
+
+---
+
+## Contributing and Extensibility
+
+Contributions are welcome and are expected to follow the existing layered architecture and design principles of the project.
+
+### Extending the Server
+
+The server is designed to support incremental extension through additional providers and tools.
+
+**Adding a new provider**
+- Implement the provider under the `providers/` layer.
+- Expose the provider via the service layer.
+- Wire the provider into the server initialization flow.
+
+**Adding a new tool**
+- Define typed input and output schemas.
+- Delegate business logic to the service layer.
+- Register the tool at the server level.
+- Return structured, schema-validated responses.
+
+This design allows the system to evolve without impacting existing tools or providers.
+
+### Contribution Workflow
+
+- Fork the repository
+- Create a feature branch
+- Implement changes following the established architecture
+- Run tests and ensure code quality
+- Submit a pull request
+
+---
+
+## Acknowledgments
+
+- Built with **[FastMCP](https://github.com/jlowin/fastmcp)**
+- Data provided by the **[National Park Service API](https://www.nps.gov/subjects/developer/api-documentation.htm)**
+- Geographic data from **[OpenStreetMap](https://www.openstreetmap.org)**
+- Weather data from **[OpenWeather](https://openweathermap.org/api)**

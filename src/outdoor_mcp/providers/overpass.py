@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+import re
 from typing import Any
 
 from ..core.exceptions import ProviderError
@@ -19,22 +20,26 @@ class OverpassProvider:
     def __init__(self, ctx: ProviderContext):
         self._ctx = ctx
 
-    async def search_locations(self, lat: float, lon: float, radius_km: float, query: str, limit: int = 10) -> list[Location]:
+    async def search_locations(self, lat: float, lon: float, radius_km: float, query: str | None, limit: int = 10) -> list[Location]:
         await self._ctx.limiter.acquire()
         radius_m = int(max(100, radius_km * 1000))
 
         # Simple, robust query: search for named nodes/ways/relations matching query within radius.
+        name_filter = ""
+        if query:
+            safe = re.escape(query)
+            name_filter = f'[name~"{safe}",i]'
         q = f"""
         [out:json][timeout:25];
         (
-          node(around:{radius_m},{lat},{lon})[name~"{query}",i];
-          way(around:{radius_m},{lat},{lon})[name~"{query}",i];
-          relation(around:{radius_m},{lat},{lon})[name~"{query}",i];
+          node(around:{radius_m},{lat},{lon}){name_filter};
+          way(around:{radius_m},{lat},{lon}){name_filter};
+          relation(around:{radius_m},{lat},{lon}){name_filter};
         );
         out center {limit};
         """
 
-        resp = await self._ctx.http.request("POST", settings.overpass_url, params={"data": q})
+        resp = await self._ctx.http.request("POST", settings.overpass_url, data={"data": q}, timeout=settings.overpass_timeout_s)
         if resp.status_code != 200:
             raise ProviderError(code="overpass_http_error", message="Overpass API returned error", details={"status": resp.status_code, "text": resp.text[:500]})
 
@@ -76,7 +81,7 @@ class OverpassProvider:
         );
         out center 50;
         """
-        resp = await self._ctx.http.request("POST", settings.overpass_url, params={"data": q})
+        resp = await self._ctx.http.request("POST", settings.overpass_url, data={"data": q}, timeout=settings.overpass_timeout_s)
         if resp.status_code != 200:
             raise ProviderError(code="overpass_http_error", message="Overpass API returned error", details={"status": resp.status_code, "text": resp.text[:500]})
         data = resp.json()

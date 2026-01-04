@@ -1,4 +1,12 @@
-def test_import_server():
+import pytest
+
+
+@pytest.mark.asyncio
+async def test_import_server():
     from outdoor_mcp.server import OutdoorIntelligenceServer
+
     srv = OutdoorIntelligenceServer()
-    assert srv.mcp is not None
+    try:
+        assert srv.mcp is not None
+    finally:
+        await srv.close()

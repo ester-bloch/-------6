@@ -66,7 +66,14 @@ class RiskService:
             return 25
         return 10
 
-    def assess(self, conditions: RealTimeConditions, feature_count: int, when_iso: str | None = None) -> RiskAssessment:
+    def assess(
+        self,
+        conditions: RealTimeConditions,
+        feature_count: int,
+        when_iso: str | None = None,
+        alerts_ok: bool = True,
+        alerts_demo: bool = False,
+    ) -> RiskAssessment:
         weather = self._weather_risk(conditions)
         alerts = self._alerts_risk(conditions)
         remoteness = self._remoteness_risk(feature_count)
@@ -87,10 +94,12 @@ class RiskService:
         if alerts >= 35:
             recs.append("Review active alerts and follow local authority guidance.")
 
-        if conditions.weather.description and "Demo weather" in conditions.weather.description:
+        if conditions.weather.is_demo:
             uncertainties.append("Weather is in demo mode (no OPENWEATHER_API_KEY). Risk score may be underestimated/overestimated.")
-        if not conditions.alerts:
-            uncertainties.append("Alert coverage may be partial (NPS geo alerts not supported directly).")
+        if alerts_demo:
+            uncertainties.append("Alert coverage is demo-only (no NPS_API_KEY).")
+        elif not alerts_ok:
+            uncertainties.append("Alert coverage unavailable (NPS alerts provider failed).")
 
         evidence = {
             "weather": conditions.weather.model_dump(),

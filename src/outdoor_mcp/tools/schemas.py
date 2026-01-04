@@ -8,7 +8,7 @@ class SearchLocationsInput(BaseModel):
     lat: float = Field(..., ge=-90, le=90, description="Latitude")
     lon: float = Field(..., ge=-180, le=180, description="Longitude")
     radius_km: float = Field(default=5.0, ge=0.1, le=200, description="Search radius in kilometers")
-    query: str = Field(..., min_length=1, max_length=80, description="Name keyword (regex-like search)")
+    query: Optional[str] = Field(default=None, min_length=1, max_length=80, description="Name keyword (regex-like search)")
     limit: int = Field(default=10, ge=1, le=25)
 
 

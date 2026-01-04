@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Optional, TypeVar
@@ -18,6 +19,8 @@ class TTLCache:
     def __init__(self, default_ttl_s: int):
         self._default_ttl_s = default_ttl_s
         self._store: dict[str, CacheEntry] = {}
+        self._inflight: dict[str, asyncio.Task] = {}
+        self._inflight_lock = asyncio.Lock()
 
     def get(self, key: str) -> Optional[CacheEntry]:
         entry = self._store.get(key)
@@ -42,6 +45,30 @@ class TTLCache:
         entry = self.get(key)
         if entry:
             return entry.value, {"hit": True, "age_s": int(time.time() - entry.created_at), "ttl_s": int(entry.expires_at - entry.created_at)}
-        value = await factory()
-        self.set(key, value, ttl_s=ttl_s)
+        created = False
+        async with self._inflight_lock:
+            task = self._inflight.get(key)
+            if task is None:
+                task = asyncio.create_task(factory())
+                self._inflight[key] = task
+                created = True
+        try:
+            value = await task
+        except Exception:
+            if created:
+                async with self._inflight_lock:
+                    if self._inflight.get(key) is task:
+                        self._inflight.pop(key, None)
+            raise
+
+        if created:
+            self.set(key, value, ttl_s=ttl_s)
+            async with self._inflight_lock:
+                if self._inflight.get(key) is task:
+                    self._inflight.pop(key, None)
+            return value, {"hit": False, "age_s": 0, "ttl_s": ttl_s if ttl_s is not None else self._default_ttl_s}
+
+        entry = self.get(key)
+        if entry:
+            return entry.value, {"hit": True, "age_s": int(time.time() - entry.created_at), "ttl_s": int(entry.expires_at - entry.created_at)}
         return value, {"hit": False, "age_s": 0, "ttl_s": ttl_s if ttl_s is not None else self._default_ttl_s}
